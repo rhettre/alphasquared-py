@@ -1,0 +1,2 @@
+class AlphaSquaredAPIException(Exception):
+    pass

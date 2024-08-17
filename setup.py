@@ -7,7 +7,7 @@ with open("requirements.txt") as f:
     requirements = f.read().splitlines()
 
 setup(
-    name='coinbase-advancedtrade-python',
+    name='alphasquared',
     version='0.1.0',
     description='The unofficial Python client for the AlphaSquared API',
     long_description=long_description,
@@ -16,12 +16,12 @@ setup(
     author_email='rhett@rhett.blog',
     license='MIT',
     url='https://github.com/rhettre/alphasquared-py',
-    packages=find_packages(),
+    packages=find_packages(exclude=["tests"]),
     install_requires=requirements,
     include_package_data=True,
     keywords=['alphasquared', 'coinbase', 'gemini', 'kraken', 'orderbook', 'trade', 'bitcoin', 'ethereum', 'BTC', 'ETH',
-              'client', 'api', 'wrapper', 'exchange', 'crypto', 'currency', 'trading', 'trading-api', 'coinbase',
-              'advanced-trade', 'prime', 'coinbaseadvancedtrade', 'coinbase-advanced-trade','fear-and-greed-index'],
+              'client', 'api', 'wrapper', 'exchange', 'crypto', 'currency', 'trading', 'trading-api',
+              'fear-and-greed-index'],
     classifiers=[
         'Development Status :: 3 - Alpha',
         'Intended Audience :: Developers',
@@ -36,4 +36,5 @@ setup(
         'Programming Language :: Python :: 3.12',
     ],
     python_requires='>=3.9',
+    test_suite='tests',
 )

@@ -32,7 +32,7 @@ jobs:
         virtualenv venv
         source venv/bin/activate
         mkdir python
-        echo "coinbase-advancedtrade-python" > requirements.txt
+        echo "alphasquared-py" > requirements.txt
         docker run --rm -v "$PWD":/var/task public.ecr.aws/sam/build-python3.9:latest /bin/sh -c "pip install --platform manylinux2014_x86_64 --implementation cp --python 3.9 --only-binary=:all: --upgrade -r requirements.txt -t python"
         zip -r layer-python3.9-x86_64.zip python
 

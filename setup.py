@@ -7,7 +7,7 @@ with open("requirements.txt") as f:
     requirements = f.read().splitlines()
 
 setup(
-    name='alphasquared',
+    name='alphasquared-py',
     version='0.1.0',
     description='The unofficial Python client for the AlphaSquared API',
     long_description=long_description,

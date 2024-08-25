@@ -60,4 +60,4 @@ jobs:
     - name: Verify package
       run: |
         python -m pip install --index-url https://pypi.org/simple/ --no-deps alphasquared-py
-        python -c "import alphasquared-py"
+        python -c "from alphasquared import AlphaSquared; print(AlphaSquared.__name__)"

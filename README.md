@@ -9,6 +9,10 @@ This is an unofficial Python client for the AlphaSquared API. It allows users to
 - Implements rate limiting to comply with API usage rules
 - Provides methods to retrieve asset information, strategy values, and hypothetical data
 - Includes error handling and logging functionality
+- Fetch comprehensive asset data (price, risk, market cap, etc.)
+- Get custom strategy values
+- Built-in caching to reduce API calls
+- Automatic rate limiting to comply with API rules
 
 ## Installation
 
@@ -51,6 +55,27 @@ eth_hypotheticals = api.get_hypotheticals("ETH")
 print(eth_hypotheticals)
 ```
 
+### Fetching Comprehensive Asset Data
+
+```python
+btc_comprehensive = api.get_comprehensive_asset_data("BTC")
+print(btc_comprehensive)
+```
+
+### Getting Strategy Value for a Specific Risk Level
+
+```python
+strategy_value = api.get_strategy_value_for_risk("My Custom Strat", 50, "buy")
+print(strategy_value)
+```
+
+### Getting Current Risk Level
+
+```python
+current_risk = api.get_current_risk("BTC")
+print(current_risk)
+```
+
 ## Error Handling
 
 The client includes built-in error handling. You can check for errors in the API responses:
@@ -64,6 +89,14 @@ if api.has_error(result):
 ## Rate Limiting
 
 The client automatically handles rate limiting to ensure compliance with the API's usage rules (6 requests per minute).
+
+## Caching
+
+The client uses caching to reduce the number of API calls. You can set the cache TTL (time-to-live) when initializing the client. The default cache TTL is 5 minutes.
+
+```python
+api = AlphaSquared("YOUR_API_TOKEN", cache_ttl=300)  # 5 minutes
+```
 
 ## Documentation
 

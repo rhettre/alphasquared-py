@@ -6,9 +6,9 @@ with open("README.md", "r", encoding="utf-8") as fh:
 with open("requirements.txt") as f:
     requirements = f.read().splitlines()
 
-setup(
+setup( 
     name='alphasquared-py',
-    version='0.1.0',
+    version='0.2.0',
     description='The unofficial Python client for the AlphaSquared API',
     long_description=long_description,
     long_description_content_type="text/markdown",

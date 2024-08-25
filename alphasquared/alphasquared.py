@@ -1,13 +1,16 @@
-import requests
-import time
-import logging
 import json
-from typing import Dict, Any
+import logging
+import time
+from datetime import datetime
 from functools import lru_cache
-from datetime import datetime, timedelta
+from typing import Dict, Any
+
+import requests
+
 
 class AlphaSquaredAPIException(Exception):
     """Custom exception for AlphaSquared API errors."""
+
 
 class AlphaSquared:
     """Main class for interacting with the AlphaSquared API."""
@@ -38,10 +41,10 @@ class AlphaSquared:
         headers = {"Authorization": self.api_token}
         url = f"{self.BASE_URL}/{endpoint}"
         response = requests.get(url, headers=headers, params=params)
-        
+
         if response.status_code != 200:
             raise AlphaSquaredAPIException(f"API request failed: {response.status_code} - {response.text}")
-        
+
         return response.json()
 
     def _check_rate_limit(self):
@@ -49,19 +52,19 @@ class AlphaSquared:
         if current_time - self.last_request_time >= 60:
             self.last_request_time = current_time
             self.request_count = 0
-        
+
         if self.request_count >= self.RATE_LIMIT:
             sleep_time = 60 - (current_time - self.last_request_time)
             if sleep_time > 0:
                 time.sleep(sleep_time)
             self.last_request_time = time.time()
             self.request_count = 0
-        
+
         self.request_count += 1
 
     def _handle_api_exception(self, e: AlphaSquaredAPIException, context: str) -> Dict[str, Any]:
         error_details = json.loads(str(e).split(" - ", 1)[1]) if " - " in str(e) else {}
-        
+
         if context.startswith("getting hypotheticals"):
             asset = context.split("for ")[-1]
             error_message = f"Invalid asset: {asset}. Please provide a valid cryptocurrency symbol (e.g., 'BTC' or 'ETH')."
@@ -72,7 +75,7 @@ class AlphaSquared:
             error_message = f"Error in {context}: {error_details.get('message', str(e))}"
 
         self.logger.error(error_message)
-        
+
         return {
             "error": error_message,
             "api_error": {
@@ -113,13 +116,13 @@ class AlphaSquared:
     def _get_comprehensive_asset_data_uncached(self, asset: str) -> Dict[str, Any]:
         """
         Fetch comprehensive data for a given asset, including asset info and hypotheticals.
-        
+
         :param asset: The asset symbol (e.g., 'BTC', 'ETH')
         :return: A dictionary containing asset info and hypotheticals
         """
         asset_info = self.get_asset_info(asset)
         hypotheticals = self.get_hypotheticals(asset)
-        
+
         return {
             "asset_info": asset_info,
             "hypotheticals": hypotheticals
@@ -128,7 +131,7 @@ class AlphaSquared:
     def get_current_risk(self, asset: str) -> float:
         """
         Get the current risk value for a given asset.
-        
+
         :param asset: The asset symbol (e.g., 'BTC', 'ETH')
         :return: The current risk value as a float
         """
@@ -138,7 +141,7 @@ class AlphaSquared:
     def get_strategy_value_for_risk(self, strategy_name: str, risk_level: int, action: str = "buy") -> float:
         """
         Get the strategy value for a specific risk level.
-        
+
         :param strategy_name: The name of the strategy
         :param risk_level: The risk level (0-100)
         :param action: Either "buy" or "sell" (default: "buy")

@@ -5,14 +5,20 @@
 # Note: This layer is specifically built for Python 3.9 and x86_64 architecture due to the build process.
 # If you need layers for different Python versions or architectures, you'll need to modify the build step.
 
-name: Build and Release Lambda Layer
+name: Release Lambda Layer
 
 on:
-  release:
-    types: [created]
+  repository_dispatch:
+    types: [trigger-lambda-release]
+  workflow_dispatch:
+    inputs:
+      run_type:
+        description: 'Type of run (manual or auto)'
+        required: true
+        default: 'manual'
 
 jobs:
-  build-and-release-layer:
+  release-lambda:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3

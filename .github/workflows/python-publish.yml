@@ -6,7 +6,7 @@
 # separate terms of service, privacy policy, and support
 # documentation.
 
-name: Upload Python Package
+name: Upload Python Package and Trigger Lambda Release
 
 on:
   release:
@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: read
+  actions: write  # Add this to allow triggering other workflows
 
 jobs:
   deploy:
@@ -61,3 +62,10 @@ jobs:
       run: |
         python -m pip install --index-url https://pypi.org/simple/ --no-deps alphasquared-py
         python -c "from alphasquared import AlphaSquared; print(AlphaSquared.__name__)"
+
+    - name: Trigger Lambda Release Workflow
+      if: success()
+      uses: peter-evans/repository-dispatch@v2
+      with:
+        token: ${{ secrets.REPO_ACCESS_TOKEN }}
+        event-type: trigger-lambda-release

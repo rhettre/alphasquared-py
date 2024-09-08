@@ -138,19 +138,31 @@ class AlphaSquared:
         asset_info = self.get_asset_info(asset)
         return float(asset_info.get("current_risk", 0))
 
-    def get_strategy_value_for_risk(self, strategy_name: str, risk_level: int, action: str = "buy") -> float:
+    def get_strategy_value_for_risk(self, strategy_name: str, risk: float) -> tuple[str, float]:
         """
-        Get the strategy value for a specific risk level.
+        Get the strategy action and value for a specific risk level, rounding down to the nearest defined risk level.
 
         :param strategy_name: The name of the strategy
-        :param risk_level: The risk level (0-100)
-        :param action: Either "buy" or "sell" (default: "buy")
-        :return: The strategy value as a float
+        :param risk: The risk level (0-100, can be float)
+        :return: A tuple containing the action ("buy" or "sell") and the value as a float
         """
         strategy_values = self.get_strategy_values(strategy_name)
-        action_values = strategy_values.get(f"{action}_values", {})
-        value = action_values.get(f"risk_{risk_level}", "0")
-        return float(value) if value else 0.0
+        buy_values = strategy_values.get("buy_values", {})
+        sell_values = strategy_values.get("sell_values", {})
+        
+        risk_levels = sorted(set([int(k.split('_')[1]) for k in buy_values.keys()] + 
+                                 [int(k.split('_')[1]) for k in sell_values.keys()]))
+        nearest_risk = max([r for r in risk_levels if r <= risk], default=min(risk_levels))
+        
+        buy_value = float(buy_values.get(f"risk_{nearest_risk}", "0") or 0)
+        sell_value = float(sell_values.get(f"risk_{nearest_risk}", "0") or 0)
+        
+        if buy_value > sell_value:
+            return "buy", buy_value
+        elif sell_value > buy_value:
+            return "sell", sell_value
+        else:
+            return "buy", 0.0
 
     def force_refresh_asset_data(self, asset: str) -> Dict[str, Any]:
         self._cached_comprehensive_asset_data.cache_clear()

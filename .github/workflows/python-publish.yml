@@ -65,7 +65,13 @@ jobs:
 
     - name: Trigger Lambda Release Workflow
       if: success()
-      uses: peter-evans/repository-dispatch@v2
+      uses: actions/github-script@v6
       with:
-        token: ${{ secrets.REPO_ACCESS_TOKEN }}
-        event-type: trigger-lambda-release
+        github-token: ${{secrets.GITHUB_TOKEN}}
+        script: |
+          await github.rest.actions.createWorkflowDispatch({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            workflow_id: 'release-lambda.yml',
+            ref: 'main'
+          })

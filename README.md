@@ -62,11 +62,11 @@ btc_comprehensive = api.get_comprehensive_asset_data("BTC")
 print(btc_comprehensive)
 ```
 
-### Getting Strategy Value for a Specific Risk Level
+### Getting Strategy Action and Value for a Specific Risk Level
 
 ```python
-strategy_value = api.get_strategy_value_for_risk("My Custom Strat", 50, "buy")
-print(strategy_value)
+action, value = api.get_strategy_value_for_risk("My Custom Strat", 50)
+print(f"Action: {action}, Value: {value}")
 ```
 
 ### Getting Current Risk Level
@@ -74,6 +74,23 @@ print(strategy_value)
 ```python
 current_risk = api.get_current_risk("BTC")
 print(current_risk)
+```
+
+### Getting Strategy Action and Value Based on Current Risk
+
+This example demonstrates how to get the current risk for an asset, then use that risk level to determine the strategy action and value:
+
+```python
+# Get the current risk for BTC
+btc_risk = api.get_current_risk("BTC")
+print(f"Current BTC Risk: {btc_risk}")
+
+# Define your strategy name in AlphaSquared
+strategy_name = "My Custom Strat"
+
+# Get the strategy action and value for the current risk
+action, value = api.get_strategy_value_for_risk(strategy_name, btc_risk)
+print(f"For risk {btc_risk}: Action = {action.upper()}, Value = {value}")
 ```
 
 ## Error Handling

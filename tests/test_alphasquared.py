@@ -176,13 +176,37 @@ class TestAlphaSquared(unittest.TestCase):
 
     def test_get_strategy_value_for_risk(self):
         self.api.get_strategy_values = Mock(return_value={
-            "buy_values": {"risk_50": "100"},
-            "sell_values": {"risk_50": "90"}
+            "buy_values": {"risk_50": "100", "risk_60": "120"},
+            "sell_values": {"risk_50": "90", "risk_60": "80"}
         })
-        buy_value = self.api.get_strategy_value_for_risk("Test Strategy", 50, "buy")
-        sell_value = self.api.get_strategy_value_for_risk("Test Strategy", 50, "sell")
-        self.assertEqual(buy_value, 100.0)
-        self.assertEqual(sell_value, 90.0)
+        
+        # Test buy scenario
+        action, value = self.api.get_strategy_value_for_risk("Test Strategy", 55)
+        self.assertEqual(action, "buy")
+        self.assertEqual(value, 100.0)
+        
+        # Test sell scenario
+        action, value = self.api.get_strategy_value_for_risk("Test Strategy", 65)
+        self.assertEqual(action, "sell")
+        self.assertEqual(value, 80.0)
+        
+        # Test equal values scenario (should default to buy)
+        self.api.get_strategy_values = Mock(return_value={
+            "buy_values": {"risk_50": "100"},
+            "sell_values": {"risk_50": "100"}
+        })
+        action, value = self.api.get_strategy_value_for_risk("Test Strategy", 50)
+        self.assertEqual(action, "buy")
+        self.assertEqual(value, 100.0)
+        
+        # Test no values scenario
+        self.api.get_strategy_values = Mock(return_value={
+            "buy_values": {},
+            "sell_values": {}
+        })
+        action, value = self.api.get_strategy_value_for_risk("Test Strategy", 50)
+        self.assertEqual(action, "buy")
+        self.assertEqual(value, 0.0)
 
 if __name__ == '__main__':
     unittest.main()

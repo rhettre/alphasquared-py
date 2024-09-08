@@ -8,8 +8,7 @@
 name: Release Lambda Layer
 
 on:
-  repository_dispatch:
-    types: [trigger-lambda-release]
+  workflow_call:
   workflow_dispatch:
     inputs:
       run_type:

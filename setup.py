@@ -8,7 +8,7 @@ with open("requirements.txt") as f:
 
 setup( 
     name='alphasquared-py',
-    version='0.3.0',
+    version='0.3.1',
     description='The unofficial Python client for the AlphaSquared API',
     long_description=long_description,
     long_description_content_type="text/markdown",

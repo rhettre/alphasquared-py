@@ -13,6 +13,7 @@ This is an unofficial Python client for the AlphaSquared API. It allows users to
 - Get custom strategy values
 - Built-in caching to reduce API calls
 - Automatic rate limiting to comply with API rules
+- Configurable logging with debug mode for development
 
 ## Installation
 
@@ -30,6 +31,12 @@ To use the AlphaSquared API, you need to obtain an API token from your AlphaSqua
 from alphasquared import AlphaSquared
 
 api = AlphaSquared("YOUR_API_TOKEN")
+```
+
+You can also enable debug mode for more detailed logging during development:
+
+```python
+api = AlphaSquared("YOUR_API_TOKEN", debug=True)
 ```
 
 ## Usage
@@ -114,6 +121,16 @@ The client uses caching to reduce the number of API calls. You can set the cache
 ```python
 api = AlphaSquared("YOUR_API_TOKEN", cache_ttl=300)  # 5 minutes
 ```
+
+## Logging
+
+The client includes configurable logging functionality. By default, logging is set to WARNING level. You can enable debug mode for more detailed logging during development:
+
+```python
+api = AlphaSquared("YOUR_API_TOKEN", debug=True)
+```
+
+In production, sensitive information in request headers and responses is automatically redacted in logs.
 
 ## Documentation
 

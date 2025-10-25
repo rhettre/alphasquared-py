@@ -185,10 +185,10 @@ class TestAlphaSquared(unittest.TestCase):
         self.assertEqual(action, "buy")
         self.assertEqual(value, 100.0)
         
-        # Test sell scenario
+        # Test sell scenario (choose larger value -> still buy here)
         action, value = self.api.get_strategy_value_for_risk("Test Strategy", 65)
-        self.assertEqual(action, "sell")
-        self.assertEqual(value, 80.0)
+        self.assertEqual(action, "buy")
+        self.assertEqual(value, 120.0)
         
         # Test equal values scenario (should default to buy)
         self.api.get_strategy_values = Mock(return_value={
@@ -207,6 +207,163 @@ class TestAlphaSquared(unittest.TestCase):
         action, value = self.api.get_strategy_value_for_risk("Test Strategy", 50)
         self.assertEqual(action, "buy")
         self.assertEqual(value, 0.0)
+
+    @patch('alphasquared.alphasquared.requests.get')
+    def test_get_strategy_actions_success(self, mock_get):
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "actions": [
+                {"id": 1, "type": "BUY", "amount": "100", "risk_level": 30},
+                {"id": 2, "type": "SELL", "amount": "50", "risk_level": 80},
+            ],
+            "pagination": {"total": 2, "total_pages": 1, "current_page": 1, "per_page": 50},
+        }
+        mock_get.return_value = mock_response
+
+        result = self.api.get_strategy_actions(strategy_name="My Strategy", page=1, per_page=50)
+        self.assertIn("actions", result)
+        self.assertEqual(len(result["actions"]), 2)
+        self.assertEqual(result["pagination"]["total_pages"], 1)
+
+    @patch('alphasquared.alphasquared.requests.get')
+    def test_get_strategy_actions_param_building(self, mock_get):
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"actions": [], "pagination": {"total_pages": 1}}
+        mock_get.return_value = mock_response
+
+        # executed True maps to "true", clamp per_page to 100, page min 1
+        self.api.get_strategy_actions(strategy_id=123, page=0, per_page=500, executed=True)
+        args, kwargs = mock_get.call_args
+        params = kwargs.get('params', {})
+        self.assertEqual(params.get('page'), 1)
+        self.assertEqual(params.get('per_page'), 100)
+        self.assertEqual(params.get('strategy_id'), 123)
+        self.assertEqual(params.get('executed'), 'true')
+
+        # executed False maps to "false"
+        self.api.get_strategy_actions(strategy_id=123, executed=False)
+        _, kwargs = mock_get.call_args
+        self.assertEqual(kwargs['params'].get('executed'), 'false')
+
+        # executed "all" passes through
+        self.api.get_strategy_actions(strategy_id=123, executed="all")
+        _, kwargs = mock_get.call_args
+        self.assertEqual(kwargs['params'].get('executed'), 'all')
+
+        # executed None omits the param
+        self.api.get_strategy_actions(strategy_id=123)
+        _, kwargs = mock_get.call_args
+        self.assertNotIn('executed', kwargs['params'])
+
+    @patch('alphasquared.alphasquared.requests.get')
+    def test_iter_strategy_actions_multiple_pages_with_nested_pagination(self, mock_get):
+        # Page 1
+        resp1 = Mock()
+        resp1.status_code = 200
+        resp1.json.return_value = {
+            "actions": [{"id": 1, "type": "BUY"}, {"id": 2, "type": "SELL"}],
+            "pagination": {"total": 3, "total_pages": 2, "current_page": 1, "per_page": 2},
+        }
+        # Page 2
+        resp2 = Mock()
+        resp2.status_code = 200
+        resp2.json.return_value = {
+            "actions": [{"id": 3, "type": "BUY"}],
+            "pagination": {"total": 3, "total_pages": 2, "current_page": 2, "per_page": 2},
+        }
+        mock_get.side_effect = [resp1, resp2]
+
+        actions = list(self.api.iter_strategy_actions(strategy_name="My Strategy", per_page=2))
+        self.assertEqual(len(actions), 3)
+        self.assertEqual(actions[0].get('id'), 1)
+        self.assertEqual(actions[2].get('id'), 3)
+        # Only two API calls should be made because total_pages=2
+        self.assertEqual(mock_get.call_count, 2)
+
+    @patch('alphasquared.alphasquared.requests.get')
+    def test_iter_strategy_actions_error_yields_once(self, mock_get):
+        # First page ok
+        resp1 = Mock()
+        resp1.status_code = 200
+        resp1.json.return_value = {
+            "actions": [{"id": 1, "type": "BUY"}],
+            "pagination": {"total_pages": 3, "current_page": 1},
+        }
+        # Second page error (e.g., 429)
+        resp2 = Mock()
+        resp2.status_code = 429
+        resp2.text = json.dumps({"code": "too_many_requests", "message": "Too Many Requests"})
+        mock_get.side_effect = [resp1, resp2]
+
+        yielded = list(self.api.iter_strategy_actions(strategy_id=7, per_page=1))
+        # Expect first action dict and then a single error dict
+        self.assertEqual(yielded[0].get('id'), 1)
+        self.assertTrue(isinstance(yielded[1], dict) and 'error' in yielded[1])
+        self.assertIn('Too Many Requests', yielded[1]['error'])
+        self.assertEqual(len(yielded), 2)
+
+    @patch('alphasquared.alphasquared.requests.patch')
+    def test_update_strategy_action_status_success_with_json(self, mock_patch):
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.text = json.dumps({"id": 1, "executed": True})
+        mock_response.json.return_value = {"id": 1, "executed": True}
+        mock_patch.return_value = mock_response
+
+        res = self.api.update_strategy_action_status(notification_id=42, executed=True, strategy_name="S")
+        self.assertFalse(self.api.has_error(res))
+        self.assertTrue(res.get("executed"))
+        # verify URL path and payload
+        args, kwargs = mock_patch.call_args
+        self.assertIn('/strategy-actions/42', args[0])
+        self.assertEqual(kwargs['json'], {"executed": True})
+
+    @patch('alphasquared.alphasquared.requests.patch')
+    def test_update_strategy_action_status_success_empty_body(self, mock_patch):
+        mock_response = Mock()
+        mock_response.status_code = 204
+        mock_response.text = ""
+        mock_patch.return_value = mock_response
+
+        res = self.api.update_strategy_action_status(notification_id="abc123", executed=True, strategy_id=9)
+        self.assertEqual(res, {"status": "success"})
+        args, kwargs = mock_patch.call_args
+        self.assertIn('/strategy-actions/abc123', args[0])
+
+    @patch('alphasquared.alphasquared.requests.patch')
+    def test_update_strategy_action_status_error(self, mock_patch):
+        mock_response = Mock()
+        mock_response.status_code = 404
+        mock_response.text = json.dumps({"message": "Action not found"})
+        mock_patch.return_value = mock_response
+
+        res = self.api.update_strategy_action_status(notification_id=999, executed=True, strategy_name="S")
+        self.assertTrue(self.api.has_error(res))
+        self.assertIn("not found", res["error"].lower())
+
+    @patch('alphasquared.alphasquared.requests.get')
+    def test_get_strategy_actions_timeout_forwarded(self, mock_get):
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"actions": [], "pagination": {"total_pages": 1}}
+        mock_get.return_value = mock_response
+
+        self.api.get_strategy_actions(strategy_id=1, timeout=5.5)
+        _, kwargs = mock_get.call_args
+        self.assertEqual(kwargs.get('timeout'), 5.5)
+
+    @patch('alphasquared.alphasquared.requests.patch')
+    def test_update_strategy_action_status_timeout_forwarded(self, mock_patch):
+        mock_response = Mock()
+        mock_response.status_code = 204
+        mock_response.text = ""
+        mock_patch.return_value = mock_response
+
+        self.api.update_strategy_action_status(notification_id=1, executed=True, strategy_id=2, timeout=2.0)
+        _, kwargs = mock_patch.call_args
+        self.assertEqual(kwargs.get('timeout'), 2.0)
 
 if __name__ == '__main__':
     unittest.main()

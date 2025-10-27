@@ -3,7 +3,7 @@ import logging
 import time
 from datetime import datetime
 from functools import lru_cache
-from typing import Dict, Any
+from typing import Dict, Any, Iterator, Optional, Union
 
 import requests
 
@@ -41,7 +41,7 @@ class AlphaSquared:
             logger.setLevel(logging.WARNING)
         return logger
 
-    def _make_request(self, endpoint: str, params: Dict[str, Any] = None) -> Dict[str, Any]:
+    def _make_request(self, endpoint: str, params: Dict[str, Any] = None, timeout: Optional[float] = None) -> Dict[str, Any]:
         self._check_rate_limit()
         # Send the token without Bearer prefix
         headers = {
@@ -57,23 +57,42 @@ class AlphaSquared:
             # Don't log headers in production as they may contain sensitive info
             self.logger.debug("Request headers: [REDACTED]")
             
-            response = requests.get(url, headers=headers, params=params)
+            if timeout is not None:
+                response = requests.get(url, headers=headers, params=params, timeout=timeout)
+            else:
+                response = requests.get(url, headers=headers, params=params)
             
             # Log the response for debugging
             self.logger.debug(f"Response status: {response.status_code}")
             self.logger.debug("Response headers: [REDACTED]")
-            self.logger.debug(f"Response content: {response.text[:100]}...")  # Log first 100 chars
+            try:
+                content_str = response.text if isinstance(getattr(response, "text", ""), str) else str(getattr(response, "text", ""))
+                self.logger.debug(f"Response content: {content_str[:100]}...")  # Log first 100 chars
+            except Exception:
+                self.logger.debug("Response content: [unavailable]")
             
             if response.status_code != 200:
                 error_message = f"API request failed: {response.status_code}"
+                parsed = False
+                # Try response.json() first
                 try:
-                    # Try to parse the response as JSON
                     error_json = response.json()
-                    error_message += f" - {json.dumps(error_json)}"
-                except json.JSONDecodeError:
-                    # If not JSON, use the raw text
-                    error_message += f" - {response.text}"
-                
+                    if isinstance(error_json, (dict, list, str, int, float, bool)):
+                        try:
+                            error_message += f" - {json.dumps(error_json)}"
+                        except TypeError:
+                            error_message += f" - {str(error_json)}"
+                        parsed = True
+                except Exception:
+                    parsed = False
+                # Fallback to parsing response.text
+                if not parsed:
+                    raw_text = getattr(response, "text", "") or ""
+                    try:
+                        raw_json = json.loads(raw_text)
+                        error_message += f" - {json.dumps(raw_json)}"
+                    except Exception:
+                        error_message += f" - {raw_text}"
                 raise AlphaSquaredAPIException(error_message)
             
             # Try to parse the response as JSON
@@ -95,6 +114,86 @@ class AlphaSquared:
             error_message = f"Network error: {str(e)}"
             self.logger.error(error_message)
             raise AlphaSquaredAPIException(error_message)
+
+    def _make_patch_request(
+        self,
+        endpoint: str,
+        json_body: Dict[str, Any],
+        params: Optional[Dict[str, Any]] = None,
+        timeout: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """
+        Perform a PATCH request against the API with consistent error handling.
+        Returns parsed JSON on 200 with body; returns {"status": "success"} on 204 or empty body.
+        """
+        self._check_rate_limit()
+        headers = {
+            "Authorization": self.api_token,
+            "User-Agent": "AlphaSquared-Python-Client/1.0",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        url = f"{self.BASE_URL}/{endpoint}"
+        try:
+            self.logger.debug(f"Patching {url} with payload (truncated) {str(json_body)[:200]}")
+            self.logger.debug("Request headers: [REDACTED]")
+            if timeout is not None:
+                response = requests.patch(url, headers=headers, params=params, json=json_body, timeout=timeout)
+            else:
+                response = requests.patch(url, headers=headers, params=params, json=json_body)
+
+            self.logger.debug(f"Response status: {response.status_code}")
+            self.logger.debug("Response headers: [REDACTED]")
+            try:
+                content_str = response.text if isinstance(getattr(response, "text", ""), str) else str(getattr(response, "text", ""))
+                self.logger.debug(f"Response content: {content_str[:100]}...")
+            except Exception:
+                self.logger.debug("Response content: [unavailable]")
+
+            # Success with no content
+            if response.status_code == 204 or not response.text:
+                if response.status_code == 200 or response.status_code == 204:
+                    return {"status": "success"}
+
+            if response.status_code != 200:
+                error_message = f"API request failed: {response.status_code}"
+                parsed = False
+                try:
+                    error_json = response.json()
+                    if isinstance(error_json, (dict, list, str, int, float, bool)):
+                        try:
+                            error_message += f" - {json.dumps(error_json)}"
+                        except TypeError:
+                            error_message += f" - {str(error_json)}"
+                        parsed = True
+                except Exception:
+                    parsed = False
+                if not parsed:
+                    raw_text = getattr(response, "text", "") or ""
+                    try:
+                        raw_json = json.loads(raw_text)
+                        error_message += f" - {json.dumps(raw_json)}"
+                    except Exception:
+                        error_message += f" - {raw_text}"
+                raise AlphaSquaredAPIException(error_message)
+
+            try:
+                return response.json()
+            except json.JSONDecodeError:
+                # No JSON body, treat as success
+                return {"status": "success"}
+
+        except requests.exceptions.RequestException as e:
+            error_message = f"Network error: {str(e)}"
+            self.logger.error(error_message)
+            raise AlphaSquaredAPIException(error_message)
+
+    @staticmethod
+    def _require_exactly_one(*, strategy_name: Optional[str], strategy_id: Optional[int]) -> None:
+        """Ensure exactly one of strategy_name or strategy_id is provided."""
+        if bool(strategy_name) ^ bool(strategy_id):
+            return
+        raise AlphaSquaredAPIException("Provide exactly one of strategy_name or strategy_id.")
 
     def _check_rate_limit(self):
         current_time = time.time()
@@ -162,6 +261,141 @@ class AlphaSquared:
             return self._make_request(f"hypotheticals/{asset_symbol}")
         except AlphaSquaredAPIException as e:
             return self._handle_api_exception(e, f"getting hypotheticals for {asset_symbol}")
+
+    def get_strategy_actions(
+        self,
+        *,
+        strategy_name: Optional[str] = None,
+        strategy_id: Optional[int] = None,
+        page: int = 1,
+        per_page: int = 50,
+        executed: Optional[Union[bool, str]] = None,
+        timeout: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """
+        Retrieve a page of strategy actions from the AlphaSquared API.
+
+        Parameters mirror the API; returns raw JSON dict.
+        - Provide exactly one of strategy_name or strategy_id.
+        - executed filter: True -> "true", False -> "false", "all" -> "all", None -> omitted.
+        - Pagination: page>=1, per_page clamped to [1,100].
+        """
+        try:
+            self._require_exactly_one(strategy_name=strategy_name, strategy_id=strategy_id)
+        except AlphaSquaredAPIException as e:
+            return self._handle_api_exception(e, "getting strategy actions (page 1)")
+
+        safe_page = max(1, int(page))
+        safe_per_page = max(1, min(int(per_page), 100))
+
+        params: Dict[str, Any] = {"page": safe_page, "per_page": safe_per_page}
+        if strategy_name:
+            params["strategy_name"] = strategy_name
+        if strategy_id is not None:
+            params["strategy_id"] = strategy_id
+        if executed is True:
+            params["executed"] = "true"
+        elif executed is False:
+            params["executed"] = "false"
+        elif executed == "all":
+            params["executed"] = "all"
+
+        try:
+            return self._make_request("strategy-actions", params=params, timeout=timeout)
+        except AlphaSquaredAPIException as e:
+            return self._handle_api_exception(e, f"getting strategy actions (page {safe_page})")
+
+    def iter_strategy_actions(
+        self,
+        *,
+        strategy_name: Optional[str] = None,
+        strategy_id: Optional[int] = None,
+        per_page: int = 50,
+        executed: Optional[Union[bool, str]] = None,
+        timeout: Optional[float] = None,
+    ) -> Iterator[Dict[str, Any]]:
+        """
+        Iterate through all strategy actions across pages. Yields raw action dicts.
+        On error, yields a single error dict and stops.
+        """
+        try:
+            self._require_exactly_one(strategy_name=strategy_name, strategy_id=strategy_id)
+        except AlphaSquaredAPIException as e:
+            yield self._handle_api_exception(e, "getting strategy actions (page 1)")
+            return
+
+        safe_per_page = max(1, min(int(per_page), 100))
+        page = 1
+        while True:
+            params: Dict[str, Any] = {"page": page, "per_page": safe_per_page}
+            if strategy_name:
+                params["strategy_name"] = strategy_name
+            if strategy_id is not None:
+                params["strategy_id"] = strategy_id
+            if executed is True:
+                params["executed"] = "true"
+            elif executed is False:
+                params["executed"] = "false"
+            elif executed == "all":
+                params["executed"] = "all"
+
+            try:
+                data = self._make_request("strategy-actions", params=params, timeout=timeout)
+            except AlphaSquaredAPIException as e:
+                yield self._handle_api_exception(e, f"getting strategy actions (page {page})")
+                return
+
+            actions = data.get("actions") if isinstance(data, dict) else data
+            if not actions:
+                return
+
+            for action in actions:
+                yield action
+
+            # Determine total_pages preference: nested pagination first, then top-level.
+            total_pages: Optional[Union[int, str]] = None
+            if isinstance(data, dict):
+                pagination_meta = data.get("pagination") or {}
+                total_pages = pagination_meta.get("total_pages") or data.get("total_pages")
+
+            page += 1
+            try:
+                if total_pages and page > int(total_pages):
+                    return
+            except (TypeError, ValueError):
+                # If total_pages is malformed, fallback to stopping only on empty list.
+                pass
+
+    def update_strategy_action_status(
+        self,
+        *,
+        notification_id: Union[int, str],
+        executed: bool = True,
+        strategy_name: Optional[str] = None,
+        strategy_id: Optional[int] = None,
+        timeout: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """
+        Update the execution status of a strategy action. Returns raw dict.
+        Provide exactly one of strategy_name or strategy_id.
+        """
+        try:
+            self._require_exactly_one(strategy_name=strategy_name, strategy_id=strategy_id)
+        except AlphaSquaredAPIException as e:
+            return self._handle_api_exception(e, f"updating strategy action status for id {notification_id}")
+
+        params: Dict[str, Any] = {}
+        if strategy_name:
+            params["strategy_name"] = strategy_name
+        if strategy_id is not None:
+            params["strategy_id"] = strategy_id
+
+        payload = {"executed": bool(executed)}
+        endpoint = f"strategy-actions/{str(notification_id)}"
+        try:
+            return self._make_patch_request(endpoint, json_body=payload, params=params, timeout=timeout)
+        except AlphaSquaredAPIException as e:
+            return self._handle_api_exception(e, f"updating strategy action status for id {notification_id}")
 
     @lru_cache(maxsize=32)
     def _cached_comprehensive_asset_data(self, asset: str, timestamp: int) -> Dict[str, Any]:
@@ -274,12 +508,12 @@ class AlphaSquared:
             self.logger.warning(f"Invalid sell value '{sell_value_str}' for risk level {nearest_risk}")
             sell_value = 0.0
         
+        # Choose the side with the larger value; tie -> buy
         if buy_value > sell_value:
             return "buy", buy_value
-        elif sell_value > buy_value:
+        if sell_value > buy_value:
             return "sell", sell_value
-        else:
-            return "buy", 0.0
+        return "buy", buy_value
 
     def force_refresh_asset_data(self, asset: str) -> Dict[str, Any]:
         self._cached_comprehensive_asset_data.cache_clear()

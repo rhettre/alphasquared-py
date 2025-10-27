@@ -38,6 +38,7 @@ You can also enable debug mode for more detailed logging during development:
 ```python
 api = AlphaSquared("YOUR_API_TOKEN", debug=True)
 ```
+The client sends your token in the `Authorization` header as-is (no `Bearer` prefix required).
 
 ## Usage
 
@@ -75,6 +76,9 @@ print(btc_comprehensive)
 action, value = api.get_strategy_value_for_risk("My Custom Strat", 50)
 print(f"Action: {action}, Value: {value}")
 ```
+Notes:
+- Rounds the input risk down to the nearest defined risk bucket in your strategy.
+- Chooses the side (buy/sell) with the larger value at that bucket; ties default to buy.
 
 ### Getting Current Risk Level
 
@@ -131,6 +135,57 @@ api = AlphaSquared("YOUR_API_TOKEN", debug=True)
 ```
 
 In production, sensitive information in request headers and responses is automatically redacted in logs.
+
+### Strategy Actions
+
+The client supports retrieving strategy action signals and updating their execution status.
+
+- Actions are returned as raw dicts; fields are not coerced.
+- Known action types include BUY, SELL, and Irregular Buy.
+- All timestamps from the API should be treated as UTC.
+
+Fetch a single page (paginated):
+
+```python
+latest = api.get_strategy_actions(strategy_name="My Strategy", page=1, per_page=50, executed=False)
+for act in latest.get("actions", []):
+    print(act)
+```
+Executed filter:
+- `executed=True` → requests items marked executed
+- `executed=False` → requests pending items (recommended for polling)
+- `executed="all"` → returns both executed and pending
+
+Iterate across all pages (history):
+
+```python
+for act in api.iter_strategy_actions(strategy_id=12345, per_page=100):
+    # Process each action dict
+    pass
+```
+
+Mark an action as executed (PATCH):
+
+```python
+res = api.update_strategy_action_status(notification_id=9876, executed=True, strategy_name="My Strategy")
+if api.has_error(res):
+    print("Failed:", res["error"])
+```
+
+Operational notes:
+
+- Concurrency: multiple pollers can double-execute before either updates status. Consider a single worker or external coordination.
+- Stateless polling: prefer `executed=False` when fetching to avoid repeatedly seeing executed items; after executing on your exchange, patch the item to `executed=True`.
+
+End-to-end example:
+
+```python
+page = api.get_strategy_actions(strategy_name="My Strategy", executed=False)
+for action in page.get("actions", []):
+    # Execute trade on your exchange here
+    api.update_strategy_action_status(notification_id=action.get("notificationId"), executed=True, strategy_name="My Strategy")
+```
+Tip: In the example script `main.py`, a `DO_PATCH` flag is used to prevent side effects during demos. In production, call `update_strategy_action_status(..., executed=True)` only after your exchange order succeeds.
 
 ## Documentation
 
